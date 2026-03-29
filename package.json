@@ -1,0 +1,17 @@
+{
+  "name": "hookly",
+  "version": "1.0.0",
+  "description": "Hookly Chrome extension MVP",
+  "private": true,
+  "scripts": {
+    "check": "node --check popup.js && node --check content.js && node --check utils.js && node --check scripts/sync-env.js",
+    "sync-env": "node scripts/sync-env.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}
