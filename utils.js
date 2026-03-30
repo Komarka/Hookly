@@ -15,7 +15,7 @@
   };
 
   const GENERATION_SYSTEM_PROMPT =
-    "You are an expert in cold outreach. Return concise, human-sounding LinkedIn outreach copy only.";
+    "You write sharp LinkedIn cold outreach. Return only valid JSON: an array of 3 strings. No numbering. No commentary.";
 
   function isLinkedInProfileUrl(url) {
     return /^https:\/\/www\.linkedin\.com\/(in|pub)\//i.test(url || "");
@@ -27,6 +27,7 @@
 
   function cleanMessageText(value) {
     return String(value || "")
+      .replace(/^\s*(?:\d+[\).:-]?|[-*])\s*/g, "")
       .replace(/^\s*["'`]+|["'`]+\s*$/g, "")
       .replace(/\r/g, "")
       .trim();
@@ -118,6 +119,11 @@
   }
 
   function createGenerationPrompt(profile, tone) {
+    const company = profile.company || "Unknown";
+    const school = profile.school || "Unknown";
+    const location = profile.location || "Unknown";
+    const about = profile.about || "None";
+
     const latestWorkplace = profile.latestWorkplace
       ? [
           profile.latestWorkplace.role || "Unknown role",
@@ -143,6 +149,11 @@
         ? profile.interestsHighlights.map((item, index) => `${index + 1}. ${item}`).join("\n")
         : "None";
 
+    const recommendationsHighlights =
+      Array.isArray(profile.recommendationsHighlights) && profile.recommendationsHighlights.length > 0
+        ? profile.recommendationsHighlights.map((item, index) => `${index + 1}. ${item}`).join("\n")
+        : "None";
+
     const recentActivity = Array.isArray(profile.recentActivity) && profile.recentActivity.length > 0
       ? profile.recentActivity.map((item, index) => `${index + 1}. ${item}`).join("\n")
       : "None";
@@ -151,47 +162,131 @@
       ? profile.sharedActivity.map((item, index) => `${index + 1}. ${item}`).join("\n")
       : "None";
 
-    return `You are an expert in cold outreach.
-Write 3 short cold messages that sound like they were written by a real person.
+    return `You are an expert at writing short cold outreach messages that get replies.
+
+Your task is to write 3 distinct LinkedIn outreach messages.
 
 Context:
 Name: ${profile.name || "Unknown"}
 Headline: ${profile.headline || "Unknown"}
-Company: ${profile.company || "Unknown"}
-School: ${profile.school || "Unknown"}
-Location: ${profile.location || "Unknown"}
-About: ${profile.about || "Unknown"}
-Latest workplace:
-${latestWorkplace}
+Tone: ${tone}
+Location: ${location}
+Current company: ${company}
+Education: ${school}
+About: ${about}
+Latest workplace: ${latestWorkplace}
 Experience highlights:
 ${experienceHighlights}
-Featured / recommended section:
+Featured highlights:
 ${featuredHighlights}
 Interests:
 ${interestsHighlights}
+Recommendations:
+${recommendationsHighlights}
 Recent authored activity:
 ${recentActivity}
-Recent shared or reposted activity:
+Shared or reposted activity:
 ${sharedActivity}
-Tone: ${tone}
 
-Rules:
-- each message must be short
-- 1-2 lines max
-- do not sound like AI
-- do not sound spammy
-- avoid generic phrases like "I would love to connect" or "Let's discuss collaboration"
-- make each option meaningfully different
-- each option must use at least one concrete hook from the profile context above
-- prefer hooks from current company, latest workplace, experience, featured section, interests, about, or authored activity when available
-- if there is authored activity, at least 2 of the 3 messages must reference it directly
-- mention a specific role, company, topic, post theme, or background detail instead of vague compliments
-- never write generic lines like "your profile stands out" or "your background in tech caught my eye"
-- if you reference shared or reposted activity, describe it as something they shared, reposted, or engaged with
-- never call shared or reposted activity "your post" or imply they authored it unless it appears in Recent authored activity
-- make the message feel natural and reply-worthy
+Goal:
+Write messages that feel human, sharp, specific, and hard to ignore.
 
-Return the result as a JSON array of 3 strings.`;
+Core rules:
+- write exactly 3 options
+- each option must be exactly 1 short sentence
+- each option must be no more than 25 words
+- each option must use a different angle
+- every option must include a hook:
+  - observation, opinion, contrast, or specific curiosity
+- at least 1 of the 3 options must use contrast or rarity
+  - for example: "most people don't...", "very few...", "rarely...", "unlike others..."
+- the message should create a reason to reply
+- sound like a smart human, not a template
+- do NOT ask questions
+- the message should contain an opinion or observation and be interesting on its own
+- each message must contain a concrete thought or observation
+- if the message could apply to almost anyone, it is weak
+- do NOT use placeholders like [industry] or [topic]
+- if there is not enough data for a specific angle, rephrase the message instead of using placeholders or vague abstractions
+- use the profile context above to anchor the message in something real and specific
+- prefer the strongest available specifics: current role, company, recent work, featured content, recommendations, interests, location, or authored activity
+- if using sharedActivity, describe it as something they shared or reposted, not something they wrote
+- never mention a field label literally (for example: "Location", "Company", "Headline", "About")
+- never use corrupted, partial, or obviously broken text fragments from scraped data
+- remove intros, explanations, and extra detail
+- keep only the core idea and the hook
+- make the message sound like a comment, not the start of a conversation
+- do NOT offer help
+- do NOT sell anything
+- delete the last clause if it does not make the message stronger
+- make the person stand out relative to others when the profile supports it
+- each message should read like a punchline
+- remove any word that does not make the message stronger
+- if the sentence can be shortened, shorten it
+- mentally compress the sentence by roughly 30% after drafting it
+- make the message dense and confident
+- do not end softly
+- do not explain the point; show it
+- remove intro words, explanations, and softening words
+- do not end with a question
+- if a draft ends with a question, rewrite it as a statement
+- end like a conclusion, not an invitation
+- if the profile context includes numbers, durations, counts, or concrete facts, prefer using them
+
+Do NOT:
+- use polite networking filler
+- use empty praise
+- ask broad generic questions
+- sound corporate
+- sound like AI
+- sound like small talk
+
+Avoid phrases like:
+- "I'd love to discuss"
+- "Would love to hear your thoughts"
+- "Would you be open to"
+- "I came across your profile"
+- "Your background caught my attention"
+- "I would value your feedback"
+- "What are your thoughts on"
+- "Did you know"
+- "Let's connect"
+- "collaboration"
+- "something interesting"
+- "fascinating"
+- "recently came across"
+- "your profile suggests"
+- "I'd love"
+- "interesting"
+- "impressive"
+- "likely"
+- "seems"
+
+Tone instructions:
+Friendly:
+- warm
+- casual
+- light
+- natural
+
+Professional:
+- clear
+- polished
+- concise
+- confident
+
+Direct:
+- shortest
+- sharpest
+- start with the hook
+- no soft opener unless necessary
+
+Return ONLY valid JSON in this exact format:
+[
+  "message option 1",
+  "message option 2",
+  "message option 3"
+]`;
   }
 
   function createHumanScorePrompt(message) {

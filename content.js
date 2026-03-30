@@ -40,12 +40,33 @@
     "div[componentkey*='Activity']"
   ];
 
+  const EXPERIENCE_SECTION_SELECTORS = [
+    "section[componentkey*='ExperienceTopLevelSection']",
+    "div[componentkey*='ExperienceTopLevelSection']"
+  ];
+
+  const FEATURED_SECTION_SELECTORS = [
+    "section[componentkey*='Featured']",
+    "div[componentkey*='Featured']"
+  ];
+
+  const RECOMMENDATIONS_SECTION_SELECTORS = [
+    "section[componentkey*='RecommendationsTopLevel']",
+    "div[componentkey*='RecommendationsTopLevel']"
+  ];
+
+  const INTERESTS_SECTION_SELECTORS = [
+    "section[componentkey*='InterestsTopLevel']",
+    "div[componentkey*='InterestsTopLevel']"
+  ];
+
   const HEADING_GROUPS = {
     about: ["about", "\u043e\u0431\u0449\u0438\u0435 \u0441\u0432\u0435\u0434\u0435\u043d\u0438\u044f"],
     activity: ["activity", "\u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044f"],
     experience: ["experience", "\u043e\u043f\u044b\u0442 \u0440\u0430\u0431\u043e\u0442\u044b"],
     featured: ["featured", "\u0440\u0435\u043a\u043e\u043c\u0435\u043d\u0434\u043e\u0432\u0430\u043d\u043e"],
-    interests: ["interests", "\u0438\u043d\u0442\u0435\u0440\u0435\u0441\u044b"]
+    interests: ["interests", "\u0438\u043d\u0442\u0435\u0440\u0435\u0441\u044b"],
+    recommendations: ["recommendations", "\u0440\u0435\u043a\u043e\u043c\u0435\u043d\u0434\u0430\u0446\u0438\u0438"]
   };
 
   const SHARED_ACTIVITY_PATTERNS = [
@@ -393,6 +414,14 @@
       return false;
     }
 
+    if (
+      /^·?\s*\d+\s*-\s*[а-яa-z]+$/i.test(text) ||
+      /^·?\s*\d+\s*[а-яa-z]+$/i.test(text) ||
+      /^·?\s*(1st|2nd|3rd|\d+th)$/i.test(text)
+    ) {
+      return false;
+    }
+
     return true;
   }
 
@@ -401,10 +430,30 @@
       return null;
     }
 
+    const paragraphs = Array.from(topCard.querySelectorAll("p"));
     const nameMatch = normalizeForMatch(name);
-    const paragraphs = Array.from(topCard.querySelectorAll("p, div, span"));
 
     for (const node of paragraphs) {
+      const text = readElementText(node);
+
+      if (!isLikelyMetaLine(text)) {
+        continue;
+      }
+
+      if (normalizeForMatch(text) === nameMatch) {
+        continue;
+      }
+
+      if (text.includes(" \u00b7 ") || text.includes(",") || text.length > 220) {
+        continue;
+      }
+
+      return text;
+    }
+
+    const fallbackNodes = Array.from(topCard.querySelectorAll("p, div, span"));
+
+    for (const node of fallbackNodes) {
       const text = readElementText(node);
 
       if (!isLikelyMetaLine(text)) {
@@ -464,11 +513,84 @@
       }
     }
 
+    const companySchoolParagraph = Array.from(topCard.querySelectorAll("p"))
+      .map(readElementText)
+      .find((text) => text && text.includes(" \u00b7 ") && text !== headline);
+
+    if (companySchoolParagraph) {
+      const parts = companySchoolParagraph.split(" \u00b7 ").map(cleanText).filter(Boolean);
+      company = company || parts[0] || null;
+      school = school || (parts.length > 1 ? parts.slice(1).join(" \u00b7 ") : null);
+    }
+
     return {
       company,
       school,
-      location
+      location: findTopCardLocation(topCard, location)
     };
+  }
+
+  function findTopCardLocation(topCard, fallbackLocation) {
+    if (!topCard) {
+      return fallbackLocation || null;
+    }
+
+    const contactLink = Array.from(topCard.querySelectorAll("a[href]")).find((link) => {
+      const href = link.getAttribute("href") || "";
+      const text = normalizeForMatch(readElementText(link));
+
+      return (
+        href.includes("/overlay/contact-info/") ||
+        text.includes("contact info") ||
+        text.includes("\u043a\u043e\u043d\u0442\u0430\u043a\u0442")
+      );
+    });
+
+    if (contactLink) {
+      const wrapper = contactLink.parentElement;
+
+      if (wrapper && wrapper.previousElementSibling) {
+        const previousText = readElementText(wrapper.previousElementSibling);
+
+        if (previousText && previousText.includes(",") && previousText.length > 8) {
+          return previousText;
+        }
+      }
+
+      const nearbyContainer = contactLink.closest("div");
+
+      if (nearbyContainer) {
+        const locationCandidate = Array.from(nearbyContainer.querySelectorAll("p"))
+          .map(readElementText)
+          .find((text) => text && text.includes(",") && text.length > 8);
+
+        if (locationCandidate) {
+          return locationCandidate;
+        }
+      }
+    }
+
+    if (fallbackLocation) {
+      return fallbackLocation;
+    }
+
+    const paragraphs = Array.from(topCard.querySelectorAll("p"))
+      .map(readElementText)
+      .filter(Boolean);
+
+    for (const text of paragraphs) {
+      if (!text || !text.includes(",") || text.length <= 8) {
+        continue;
+      }
+
+      if (normalizeForMatch(text).includes("contact info")) {
+        continue;
+      }
+
+      return text;
+    }
+
+    return null;
   }
 
   function getSectionBySelectors(selectorList) {
@@ -512,10 +634,12 @@
     return null;
   }
 
+  function getSectionByHeadingOrSelectors(headingTexts, selectorList) {
+    return findSectionByHeadingTexts(headingTexts) || getSectionBySelectors(selectorList);
+  }
+
   function extractAboutText() {
-    const section =
-      findSectionByHeadingTexts(HEADING_GROUPS.about) ||
-      getSectionBySelectors(ABOUT_SECTION_SELECTORS);
+    const section = getSectionByHeadingOrSelectors(HEADING_GROUPS.about, ABOUT_SECTION_SELECTORS);
 
     if (!section) {
       return null;
@@ -605,9 +729,7 @@
   }
 
   function extractActivityContext() {
-    const section =
-      findSectionByHeadingTexts(HEADING_GROUPS.activity) ||
-      getSectionBySelectors(ACTIVITY_SECTION_SELECTORS);
+    const section = getSectionByHeadingOrSelectors(HEADING_GROUPS.activity, ACTIVITY_SECTION_SELECTORS);
 
     if (!section) {
       return {
@@ -654,7 +776,7 @@
   }
 
   function extractExperienceHighlights() {
-    const section = findSectionByHeadingTexts(HEADING_GROUPS.experience);
+    const section = getSectionByHeadingOrSelectors(HEADING_GROUPS.experience, EXPERIENCE_SECTION_SELECTORS);
 
     if (!section) {
       return [];
@@ -662,19 +784,25 @@
 
     const highlights = [];
     const seen = new Set();
-    const items = Array.from(section.querySelectorAll("li"));
+    const items = Array.from(section.querySelectorAll("[componentkey*='entity-collection-item'], li"));
 
     for (const item of items) {
-      const lines = Array.from(item.querySelectorAll("p, span, a"))
+      const paragraphs = Array.from(item.querySelectorAll("p"))
         .map(readElementText)
         .filter(Boolean)
         .filter(isLikelyMetaLine);
 
-      if (lines.length < 2) {
+      if (paragraphs.length < 2) {
         continue;
       }
 
-      const summary = lines.slice(0, 3).join(" | ");
+      const role = paragraphs[0] || null;
+      const company = paragraphs[1] || null;
+      const dateRange = paragraphs[2] || null;
+      const location = paragraphs[3] || null;
+      const description = readElementText(item.querySelector("[data-testid='expandable-text-box']"));
+      const summaryParts = [role, company, dateRange, location, description && description.slice(0, 160)].filter(Boolean);
+      const summary = summaryParts.join(" | ");
 
       if (summary.length < 10 || seen.has(summary)) {
         continue;
@@ -708,7 +836,7 @@
   }
 
   function extractFeaturedHighlights() {
-    const section = findSectionByHeadingTexts(HEADING_GROUPS.featured);
+    const section = getSectionByHeadingOrSelectors(HEADING_GROUPS.featured, FEATURED_SECTION_SELECTORS);
 
     if (!section) {
       return [];
@@ -735,7 +863,7 @@
   }
 
   function extractInterestsHighlights() {
-    const section = findSectionByHeadingTexts(HEADING_GROUPS.interests);
+    const section = getSectionByHeadingOrSelectors(HEADING_GROUPS.interests, INTERESTS_SECTION_SELECTORS);
 
     if (!section) {
       return [];
@@ -759,6 +887,42 @@
     }
 
     return takeUniqueLines(highlights, 5);
+  }
+
+  function extractRecommendationsHighlights() {
+    const section = getSectionByHeadingOrSelectors(
+      HEADING_GROUPS.recommendations,
+      RECOMMENDATIONS_SECTION_SELECTORS
+    );
+
+    if (!section) {
+      return [];
+    }
+
+    const highlights = [];
+    const recommendationBlocks = Array.from(section.querySelectorAll("a[href]"))
+      .map((link) => link.closest("div"))
+      .filter(Boolean);
+
+    for (const block of recommendationBlocks) {
+      const text = summarizeCardText(block, 4);
+
+      if (!text || text.length < 20) {
+        continue;
+      }
+
+      if (normalizeForMatch(text).includes("recommend")) {
+        continue;
+      }
+
+      highlights.push(text.slice(0, 240));
+
+      if (highlights.length === 3) {
+        break;
+      }
+    }
+
+    return takeUniqueLines(highlights, 3);
   }
 
   function getProfileData() {
@@ -795,6 +959,7 @@
       latestWorkplace: extractLatestWorkplace(experienceHighlights),
       featuredHighlights: extractFeaturedHighlights(),
       interestsHighlights: extractInterestsHighlights(),
+      recommendationsHighlights: extractRecommendationsHighlights(),
       recentActivity: activityContext.authored,
       sharedActivity: activityContext.shared,
       imageUrl: profilePhoto ? profilePhoto.currentSrc || profilePhoto.src || null : null,
