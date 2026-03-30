@@ -118,13 +118,37 @@
   }
 
   function createGenerationPrompt(profile, tone) {
+    const latestWorkplace = profile.latestWorkplace
+      ? [
+          profile.latestWorkplace.role || "Unknown role",
+          profile.latestWorkplace.company || "Unknown company",
+          profile.latestWorkplace.summary || ""
+        ]
+          .filter(Boolean)
+          .join(" | ")
+      : "None";
+
     const experienceHighlights =
       Array.isArray(profile.experienceHighlights) && profile.experienceHighlights.length > 0
         ? profile.experienceHighlights.map((item, index) => `${index + 1}. ${item}`).join("\n")
         : "None";
 
+    const featuredHighlights =
+      Array.isArray(profile.featuredHighlights) && profile.featuredHighlights.length > 0
+        ? profile.featuredHighlights.map((item, index) => `${index + 1}. ${item}`).join("\n")
+        : "None";
+
+    const interestsHighlights =
+      Array.isArray(profile.interestsHighlights) && profile.interestsHighlights.length > 0
+        ? profile.interestsHighlights.map((item, index) => `${index + 1}. ${item}`).join("\n")
+        : "None";
+
     const recentActivity = Array.isArray(profile.recentActivity) && profile.recentActivity.length > 0
       ? profile.recentActivity.map((item, index) => `${index + 1}. ${item}`).join("\n")
+      : "None";
+
+    const sharedActivity = Array.isArray(profile.sharedActivity) && profile.sharedActivity.length > 0
+      ? profile.sharedActivity.map((item, index) => `${index + 1}. ${item}`).join("\n")
       : "None";
 
     return `You are an expert in cold outreach.
@@ -137,10 +161,18 @@ Company: ${profile.company || "Unknown"}
 School: ${profile.school || "Unknown"}
 Location: ${profile.location || "Unknown"}
 About: ${profile.about || "Unknown"}
+Latest workplace:
+${latestWorkplace}
 Experience highlights:
 ${experienceHighlights}
-Recent activity:
+Featured / recommended section:
+${featuredHighlights}
+Interests:
+${interestsHighlights}
+Recent authored activity:
 ${recentActivity}
+Recent shared or reposted activity:
+${sharedActivity}
 Tone: ${tone}
 
 Rules:
@@ -151,10 +183,12 @@ Rules:
 - avoid generic phrases like "I would love to connect" or "Let's discuss collaboration"
 - make each option meaningfully different
 - each option must use at least one concrete hook from the profile context above
-- prefer hooks from current company, experience, about, or recent activity when available
-- if there is recent activity, at least 2 of the 3 messages must reference it directly
+- prefer hooks from current company, latest workplace, experience, featured section, interests, about, or authored activity when available
+- if there is authored activity, at least 2 of the 3 messages must reference it directly
 - mention a specific role, company, topic, post theme, or background detail instead of vague compliments
 - never write generic lines like "your profile stands out" or "your background in tech caught my eye"
+- if you reference shared or reposted activity, describe it as something they shared, reposted, or engaged with
+- never call shared or reposted activity "your post" or imply they authored it unless it appears in Recent authored activity
 - make the message feel natural and reply-worthy
 
 Return the result as a JSON array of 3 strings.`;

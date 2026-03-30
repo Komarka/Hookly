@@ -43,8 +43,24 @@
   const HEADING_GROUPS = {
     about: ["about", "\u043e\u0431\u0449\u0438\u0435 \u0441\u0432\u0435\u0434\u0435\u043d\u0438\u044f"],
     activity: ["activity", "\u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044f"],
-    experience: ["experience", "\u043e\u043f\u044b\u0442 \u0440\u0430\u0431\u043e\u0442\u044b"]
+    experience: ["experience", "\u043e\u043f\u044b\u0442 \u0440\u0430\u0431\u043e\u0442\u044b"],
+    featured: ["featured", "\u0440\u0435\u043a\u043e\u043c\u0435\u043d\u0434\u043e\u0432\u0430\u043d\u043e"],
+    interests: ["interests", "\u0438\u043d\u0442\u0435\u0440\u0435\u0441\u044b"]
   };
+
+  const SHARED_ACTIVITY_PATTERNS = [
+    /\bshared this\b/i,
+    /\breposted this\b/i,
+    /\bshared\b/i,
+    /\breshared\b/i,
+    /\bcommented on this\b/i,
+    /\breacted to this\b/i,
+    /\b\u043f\u043e\u0434\u0435\u043b\u0438\u043b/i,
+    /\b\u043f\u043e\u0434\u0435\u043b\u0438\u043b\u0430\u0441/i,
+    /\b\u0440\u0435\u043f\u043e\u0441\u0442/i,
+    /\b\u043f\u0440\u043e\u043a\u043e\u043c\u043c\u0435\u043d\u0442/i,
+    /\b\u043e\u0442\u0440\u0435\u0430\u0433\u0438\u0440/i
+  ];
 
   const UI_NOISE_PATTERNS = [
     /^activity$/i,
@@ -537,47 +553,104 @@
     return UI_NOISE_PATTERNS.some((pattern) => pattern.test(normalized));
   }
 
-  function extractRecentActivity() {
+  function takeUniqueLines(lines, limit) {
+    const result = [];
+    const seen = new Set();
+
+    for (const line of lines) {
+      const text = cleanText(line);
+
+      if (!text) {
+        continue;
+      }
+
+      const normalized = normalizeForMatch(text);
+
+      if (!normalized || seen.has(normalized)) {
+        continue;
+      }
+
+      seen.add(normalized);
+      result.push(text);
+
+      if (result.length === limit) {
+        break;
+      }
+    }
+
+    return result;
+  }
+
+  function collectMeaningfulTexts(root, limit) {
+    if (!root) {
+      return [];
+    }
+
+    const lines = Array.from(root.querySelectorAll("p, span, a"))
+      .map(readElementText)
+      .filter(Boolean)
+      .filter((text) => !isNoiseText(text))
+      .filter((text) => text.length >= 4 && text.length <= 260);
+
+    return takeUniqueLines(lines, limit);
+  }
+
+  function summarizeCardText(root, limit) {
+    return collectMeaningfulTexts(root, limit).join(" | ");
+  }
+
+  function isSharedActivityCard(card, text) {
+    const cardText = `${readElementText(card) || ""} ${text || ""}`;
+    return SHARED_ACTIVITY_PATTERNS.some((pattern) => pattern.test(cardText));
+  }
+
+  function extractActivityContext() {
     const section =
       findSectionByHeadingTexts(HEADING_GROUPS.activity) ||
       getSectionBySelectors(ACTIVITY_SECTION_SELECTORS);
 
     if (!section) {
-      return [];
+      return {
+        authored: [],
+        shared: []
+      };
     }
 
-    const snippets = [];
+    const authored = [];
+    const shared = [];
     const seen = new Set();
-    const candidates = [
-      ...section.querySelectorAll("[data-testid='expandable-text-box']"),
-      ...section.querySelectorAll("a[href*='/feed/update/']"),
-      ...section.querySelectorAll("a[href*='/posts/']"),
-      ...section.querySelectorAll("article"),
-      ...section.querySelectorAll("li")
-    ];
+    const cards = Array.from(section.querySelectorAll("article, li, div[role='listitem']"));
 
-    for (const candidate of candidates) {
-      const text = readElementText(candidate);
+    for (const card of cards) {
+      const text = summarizeCardText(card, 4);
 
-      if (!text || text.length < 40 || isNoiseText(text)) {
+      if (!text || text.length < 30) {
         continue;
       }
 
-      const trimmed = text.slice(0, 260);
+      const normalized = normalizeForMatch(text);
 
-      if (seen.has(trimmed)) {
+      if (seen.has(normalized)) {
         continue;
       }
 
-      seen.add(trimmed);
-      snippets.push(trimmed);
+      seen.add(normalized);
 
-      if (snippets.length === 3) {
+      if (isSharedActivityCard(card, text)) {
+        shared.push(text.slice(0, 260));
+      } else {
+        authored.push(text.slice(0, 260));
+      }
+
+      if (authored.length >= 3 && shared.length >= 3) {
         break;
       }
     }
 
-    return snippets;
+    return {
+      authored: authored.slice(0, 3),
+      shared: shared.slice(0, 3)
+    };
   }
 
   function extractExperienceHighlights() {
@@ -618,9 +691,80 @@
     return highlights;
   }
 
+  function extractLatestWorkplace(experienceHighlights) {
+    const first = Array.isArray(experienceHighlights) ? experienceHighlights[0] : null;
+
+    if (!first) {
+      return null;
+    }
+
+    const parts = first.split(" | ").map(cleanText).filter(Boolean);
+
+    return {
+      summary: first,
+      role: parts[0] || null,
+      company: parts[1] || null
+    };
+  }
+
+  function extractFeaturedHighlights() {
+    const section = findSectionByHeadingTexts(HEADING_GROUPS.featured);
+
+    if (!section) {
+      return [];
+    }
+
+    const highlights = [];
+    const cards = Array.from(section.querySelectorAll("li, article, a[href]"));
+
+    for (const card of cards) {
+      const text = summarizeCardText(card, 3);
+
+      if (!text || text.length < 12) {
+        continue;
+      }
+
+      highlights.push(text.slice(0, 220));
+
+      if (highlights.length === 3) {
+        break;
+      }
+    }
+
+    return takeUniqueLines(highlights, 3);
+  }
+
+  function extractInterestsHighlights() {
+    const section = findSectionByHeadingTexts(HEADING_GROUPS.interests);
+
+    if (!section) {
+      return [];
+    }
+
+    const highlights = [];
+    const items = Array.from(section.querySelectorAll("li, a[href], article"));
+
+    for (const item of items) {
+      const text = summarizeCardText(item, 2);
+
+      if (!text || text.length < 4) {
+        continue;
+      }
+
+      highlights.push(text.slice(0, 180));
+
+      if (highlights.length === 5) {
+        break;
+      }
+    }
+
+    return takeUniqueLines(highlights, 5);
+  }
+
   function getProfileData() {
     const topCard = getTopCard();
     const profilePhoto = getProfilePhoto(topCard);
+    const activityContext = extractActivityContext();
     const name =
       findTopCardName(topCard) ||
       findText(NAME_SELECTORS, { visibleOnly: true }) ||
@@ -638,6 +782,7 @@
     }
 
     const meta = findTopCardMeta(topCard, headline);
+    const experienceHighlights = extractExperienceHighlights();
 
     return {
       name,
@@ -646,8 +791,12 @@
       school: meta.school,
       location: meta.location,
       about: extractAboutText(),
-      experienceHighlights: extractExperienceHighlights(),
-      recentActivity: extractRecentActivity(),
+      experienceHighlights,
+      latestWorkplace: extractLatestWorkplace(experienceHighlights),
+      featuredHighlights: extractFeaturedHighlights(),
+      interestsHighlights: extractInterestsHighlights(),
+      recentActivity: activityContext.authored,
+      sharedActivity: activityContext.shared,
       imageUrl: profilePhoto ? profilePhoto.currentSrc || profilePhoto.src || null : null,
       url: window.location.href
     };
