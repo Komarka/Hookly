@@ -1,13 +1,13 @@
 (function () {
   const API_KEY =
-    window.HooklyEnv && typeof window.HooklyEnv.OPENROUTER_API_KEY === "string"
-      ? window.HooklyEnv.OPENROUTER_API_KEY
+    window.HooklyEnv && typeof window.HooklyEnv.GROQ_API_KEY === "string"
+      ? window.HooklyEnv.GROQ_API_KEY
       : "";
 
   const API_CONFIG = {
     apiKey: API_KEY,
-    apiUrl: "https://openrouter.ai/api/v1/chat/completions",
-    model: "openrouter/free",
+    apiUrl: "https://api.groq.com/openai/v1/chat/completions",
+    model: "llama-3.1-8b-instant",
     generationTemperature: 0.9,
     scoreTemperature: 0.1,
     generationMaxTokens: 350,
@@ -175,7 +175,7 @@ Message:
 Return only a number.`;
   }
 
-  function extractTextFromOpenRouterResponse(data) {
+  function extractTextFromProviderResponse(data) {
     const choice =
       data && Array.isArray(data.choices) && data.choices.length > 0
         ? data.choices[0]
@@ -230,7 +230,7 @@ Return only a number.`;
   async function fetchChatCompletion(systemPrompt, userPrompt, options) {
     if (!API_CONFIG.apiKey) {
       throw new Error(
-        "Set OPENROUTER_API_KEY in .env, run npm run sync-env, then reload the extension.",
+        "Set GROQ_API_KEY in .env, run npm run sync-env, then reload the extension.",
       );
     }
 
@@ -239,8 +239,6 @@ Return only a number.`;
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${API_CONFIG.apiKey}`,
-        "HTTP-Referer": "https://hookly.extension.local",
-        "X-OpenRouter-Title": "Hookly",
       },
       body: JSON.stringify({
         model: API_CONFIG.model,
@@ -269,15 +267,15 @@ Return only a number.`;
       }
 
       throw new Error(
-        `OpenRouter API failed (${response.status}). ${details || "Check your API key, model, or endpoint."}`,
+        `Groq API failed (${response.status}). ${details || "Check your API key, model, or endpoint."}`,
       );
     }
 
     const data = await response.json();
-    const content = extractTextFromOpenRouterResponse(data);
+    const content = extractTextFromProviderResponse(data);
 
     if (typeof content !== "string" || !content.trim()) {
-      throw new Error("OpenRouter returned an empty response.");
+      throw new Error("Groq returned an empty response.");
     }
 
     return content.trim();
@@ -367,7 +365,7 @@ Return only a number.`;
     }
 
     throw new Error(
-      "OpenRouter did not return 3 usable messages. Try again.",
+      "Groq did not return 3 usable messages. Try again.",
     );
   }
 

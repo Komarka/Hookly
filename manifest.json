@@ -9,13 +9,13 @@
   ],
   "host_permissions": [
     "https://www.linkedin.com/*",
-    "https://openrouter.ai/*"
+    "https://api.groq.com/*"
   ],
   "action": {
     "default_title": "Hookly",
     "default_popup": "popup.html"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://openrouter.ai"
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.groq.com"
   }
 }

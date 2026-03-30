@@ -42,7 +42,7 @@ const envSource = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : ""
 const env = parseEnv(envSource);
 
 const fileContents = `window.HooklyEnv = {
-  OPENROUTER_API_KEY: ${JSON.stringify(env.OPENROUTER_API_KEY || "")}
+  GROQ_API_KEY: ${JSON.stringify(env.GROQ_API_KEY || "")}
 };
 `;
 
