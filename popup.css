@@ -249,6 +249,11 @@ textarea {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(180, 19, 64, 0.06));
 }
 
+.alpha-limit-panel {
+  margin-top: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(111, 51, 213, 0.05));
+}
+
 .status-title {
   margin: 0 0 6px;
   font-size: 14px;
@@ -264,6 +269,23 @@ textarea {
 
 .status-copy.error-copy {
   color: var(--danger);
+}
+
+.alpha-feedback {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.alpha-link {
+  color: var(--primary-strong);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.alpha-link:hover {
+  text-decoration: underline;
 }
 
 .results-header {

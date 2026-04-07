@@ -4,6 +4,10 @@
   const VARIATION_CLASSES = ["variation-a", "variation-b", "variation-c"];
   const BRAND_LOGO_URL = chrome.runtime.getURL("assets/logo.svg");
   const BUTTON_LOGO_URL = chrome.runtime.getURL("assets/logo-white.svg");
+  const ALPHA_TRY_LIMIT = 20;
+  const TRY_COUNT_STORAGE_KEY = "hookly-alpha-tries";
+  const FEEDBACK_LINK = "https://www.linkedin.com/in/ilya-komar-js/";
+  const FEEDBACK_EMAIL = "illyakomarka@gmail.com";
 
   function normalizeImageUrl(value) {
     const raw = String(value || "").trim();
@@ -38,11 +42,38 @@
       .join("");
   }
 
+  function getTryCount() {
+    try {
+      const storedValue = window.localStorage.getItem(TRY_COUNT_STORAGE_KEY);
+      const parsedValue = Number(storedValue || "0");
+
+      if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+        return 0;
+      }
+
+      return parsedValue;
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  function incrementTryCount() {
+    const nextValue = Math.min(ALPHA_TRY_LIMIT, getTryCount() + 1);
+
+    try {
+      window.localStorage.setItem(TRY_COUNT_STORAGE_KEY, String(nextValue));
+    } catch (error) {
+      return nextValue;
+    }
+
+    return nextValue;
+  }
+
   function renderWhyItWorks(items) {
     return h(
       "ul",
       { className: "why-list" },
-      items.map((item, index) => h("li", { key: `${item}-${index}` }, item))
+      items.map((item, index) => h("li", { key: `${item}-${index}` }, item)),
     );
   }
 
@@ -52,14 +83,14 @@
     bestIndex,
     sharpeningIndex,
     onCopy,
-    onMakeSharper
+    onMakeSharper,
   ) {
     return messagesWithScores.map((message, index) =>
       h(
         "article",
         {
           className: `card ${bestIndex === index ? "card-best" : ""}`.trim(),
-          key: `${message.text}-${index}`
+          key: `${message.text}-${index}`,
         },
         h(
           "div",
@@ -67,19 +98,19 @@
           h(
             "p",
             {
-              className: `variation-label ${VARIATION_CLASSES[index] || VARIATION_CLASSES[0]}`
+              className: `variation-label ${VARIATION_CLASSES[index] || VARIATION_CLASSES[0]}`,
             },
-            `Hook variation ${String.fromCharCode(65 + index)}`
+            `Hook variation ${String.fromCharCode(65 + index)}`,
           ),
           bestIndex === index &&
-            h("span", { className: "best-badge" }, "\uD83D\uDD25 Best option")
+            h("span", { className: "best-badge" }, "\uD83D\uDD25 Best option"),
         ),
         h("p", { className: "card-message" }, message.text),
         h(
           "div",
           { className: "why-block" },
           h("p", { className: "why-title" }, "Why it works"),
-          renderWhyItWorks(message.whyItWorks || [])
+          renderWhyItWorks(message.whyItWorks || []),
         ),
         bestIndex === index &&
           message.shortVersion &&
@@ -87,7 +118,7 @@
             "div",
             { className: "short-version" },
             h("p", { className: "short-version-label" }, "Short version"),
-            h("p", { className: "short-version-text" }, message.shortVersion)
+            h("p", { className: "short-version-text" }, message.shortVersion),
           ),
         h(
           "div",
@@ -98,9 +129,13 @@
             h(
               "div",
               { className: "score-row" },
-              h("span", { className: "score-pill" }, `Human Score ${message.score}%`),
-              h("span", { className: "score-label" }, message.label)
-            )
+              h(
+                "span",
+                { className: "score-pill" },
+                `Human Score ${message.score}%`,
+              ),
+              h("span", { className: "score-label" }, message.label),
+            ),
           ),
           h(
             "div",
@@ -112,23 +147,24 @@
                 className: "sharpen-button",
                 onClick: () => onMakeSharper(index),
                 disabled: sharpeningIndex === index,
-                title: "Rewrite this version to sound tighter"
+                title: "Rewrite this version to sound tighter",
               },
-              sharpeningIndex === index ? "Sharpening..." : "Make sharper"
+              sharpeningIndex === index ? "Sharpening..." : "Make sharper",
             ),
             h(
               "button",
               {
                 type: "button",
-                className: `copy-button ${copiedIndex === index ? "copied" : ""}`.trim(),
+                className:
+                  `copy-button ${copiedIndex === index ? "copied" : ""}`.trim(),
                 onClick: () => onCopy(message.text, index),
-                title: "Copy message"
+                title: "Copy message",
               },
-              copiedIndex === index ? "\u2713 Copied" : "Copy"
-            )
-          )
-        )
-      )
+              copiedIndex === index ? "\u2713 Copied" : "Copy",
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -146,10 +182,10 @@
             "div",
             { className: "skeleton-footer" },
             h("div", { className: "skeleton-tag" }),
-            h("div", { className: "skeleton-copy" })
-          )
-        )
-      )
+            h("div", { className: "skeleton-copy" }),
+          ),
+        ),
+      ),
     );
   }
 
@@ -163,6 +199,7 @@
     const [status, setStatus] = React.useState("checking");
     const [errorMessage, setErrorMessage] = React.useState("");
     const [avatarFailed, setAvatarFailed] = React.useState(false);
+    const [tryCount, setTryCount] = React.useState(getTryCount());
     const avatarUrl = normalizeImageUrl(profile && profile.imageUrl);
 
     React.useEffect(() => {
@@ -189,14 +226,24 @@
         const response = await HooklyUtils.requestProfileData(tab.id);
 
         if (!response.success) {
-          throw new Error(response.error || "Could not read this LinkedIn profile.");
+          throw new Error(
+            response.error || "Could not read this LinkedIn profile.",
+          );
         }
 
         setProfile(response.profile);
-        setStatus(HooklyUtils.hasProfileIdentity(response.profile) ? "ready" : "missing-profile");
+        setStatus(
+          HooklyUtils.hasProfileIdentity(response.profile)
+            ? "ready"
+            : "missing-profile",
+        );
       } catch (error) {
         setStatus("error");
-        setErrorMessage(error && error.message ? error.message : "Something went wrong while loading the profile.");
+        setErrorMessage(
+          error && error.message
+            ? error.message
+            : "Something went wrong while loading the profile.",
+        );
       }
     }
 
@@ -213,13 +260,24 @@
       setStatus("generating");
 
       try {
-        const generatedMessages = await HooklyUtils.generateMessages(profile, tone);
-        const messagesWithScores = await scoreAndDecorateMessages(generatedMessages);
+        const generatedMessages = await HooklyUtils.generateMessages(
+          profile,
+          tone,
+        );
+        const messagesWithScores =
+          await scoreAndDecorateMessages(generatedMessages);
+        const nextTryCount = incrementTryCount();
+
+        setTryCount(nextTryCount);
         setMessages(messagesWithScores);
         setStatus("done");
       } catch (error) {
         setStatus("error");
-        setErrorMessage(error && error.message ? error.message : "Could not generate messages right now.");
+        setErrorMessage(
+          error && error.message
+            ? error.message
+            : "Could not generate messages right now.",
+        );
       } finally {
         setIsGenerating(false);
       }
@@ -235,9 +293,9 @@
             score,
             label: HooklyUtils.getScoreLabel(score),
             whyItWorks: HooklyUtils.getWhyItWorks(text, profile),
-            shortVersion: null
+            shortVersion: null,
           };
-        })
+        }),
       );
 
       const bestPick = HooklyUtils.getBestMessage(scoredMessages);
@@ -248,13 +306,13 @@
             ...scoredMessages[bestPick.index],
             shortVersion: await HooklyUtils.generateShortVersion(
               scoredMessages[bestPick.index].text,
-              tone
-            )
+              tone,
+            ),
           };
         } catch (error) {
           scoredMessages[bestPick.index] = {
             ...scoredMessages[bestPick.index],
-            shortVersion: null
+            shortVersion: null,
           };
         }
       }
@@ -270,7 +328,9 @@
           setCopiedIndex((current) => (current === index ? null : current));
         }, 1400);
       } catch (error) {
-        setErrorMessage("Clipboard access failed. Copy manually from the card.");
+        setErrorMessage(
+          "Clipboard access failed. Copy manually from the card.",
+        );
       }
     }
 
@@ -283,16 +343,21 @@
       setErrorMessage("");
 
       try {
-        const sharperMessage = await HooklyUtils.makeMessageSharper(messages[index].text, tone);
+        const sharperMessage = await HooklyUtils.makeMessageSharper(
+          messages[index].text,
+          tone,
+        );
         const updatedTexts = messages.map((item, currentIndex) =>
-          currentIndex === index ? sharperMessage : item.text
+          currentIndex === index ? sharperMessage : item.text,
         );
         const updatedMessages = await scoreAndDecorateMessages(updatedTexts);
 
         setMessages(updatedMessages);
       } catch (error) {
         setErrorMessage(
-          error && error.message ? error.message : "Could not sharpen this message right now."
+          error && error.message
+            ? error.message
+            : "Could not sharpen this message right now.",
         );
       } finally {
         setSharpeningIndex(null);
@@ -305,8 +370,12 @@
           "div",
           { className: "status-panel error" },
           h("p", { className: "status-title" }, "Action needed"),
-          h("p", { className: "status-copy error-copy" }, errorMessage)
+          h("p", { className: "status-copy error-copy" }, errorMessage),
         );
+      }
+
+      if (tryCount >= ALPHA_TRY_LIMIT) {
+        return null;
       }
 
       if (status === "unsupported") {
@@ -317,8 +386,8 @@
           h(
             "p",
             { className: "status-copy" },
-            "Hookly only works on LinkedIn profile pages for this MVP. Open a profile, then reopen the popup."
-          )
+            "Hookly only works on LinkedIn profile pages for this MVP. Open a profile, then reopen the popup.",
+          ),
         );
       }
 
@@ -330,8 +399,8 @@
           h(
             "p",
             { className: "status-copy" },
-            "LinkedIn changed the visible profile layout or the page is still loading. Refresh the page, then try again."
-          )
+            "LinkedIn changed the visible profile layout or the page is still loading. Refresh the page, then try again.",
+          ),
         );
       }
 
@@ -343,26 +412,74 @@
           h(
             "p",
             { className: "status-copy" },
-            "Hookly is generating 3 options, scoring them, and picking the strongest one."
-          )
+            "Hookly is generating 3 options, scoring them, and picking the strongest one.",
+          ),
         );
       }
 
       return h(
         "div",
         { className: "status-panel" },
-        h("p", { className: "status-title" }, profile ? "Profile ready" : "Start from LinkedIn"),
+        h(
+          "p",
+          { className: "status-title" },
+          profile ? "Profile ready" : "Start from LinkedIn",
+        ),
         h(
           "p",
           { className: "status-copy" },
           profile
             ? "Pick a tone and get 3 reply-focused openers built from the visible profile details."
-            : "Open a LinkedIn profile to get reply-focused outreach options."
-        )
+            : "Open a LinkedIn profile to get reply-focused outreach options.",
+        ),
       );
     }
 
-    const canGenerate = HooklyUtils.hasProfileIdentity(profile) && !isGenerating;
+    function renderAlphaLimitPanel() {
+      return h(
+        "div",
+        { className: "status-panel alpha-limit-panel" },
+        h("p", { className: "status-title" }, "Alpha limit reached"),
+        h(
+          "p",
+          { className: "status-copy" },
+          "This alpha version is capped for now. Thank you for trying Hookly.",
+        ),
+        h(
+          "p",
+          { className: "status-copy" },
+          "It would be great to hear your feedback.",
+        ),
+        h(
+          "p",
+          { className: "alpha-feedback" },
+          h(
+            "a",
+            {
+              href: FEEDBACK_LINK,
+              target: "_blank",
+              rel: "noreferrer",
+              className: "alpha-link",
+            },
+            "LinkedIn",
+          ),
+          " or ",
+          h(
+            "a",
+            {
+              href: `mailto:${FEEDBACK_EMAIL}`,
+              className: "alpha-link",
+            },
+            FEEDBACK_EMAIL,
+          ),
+        ),
+      );
+    }
+
+    const canGenerate =
+      HooklyUtils.hasProfileIdentity(profile) &&
+      !isGenerating &&
+      tryCount < ALPHA_TRY_LIMIT;
     const bestPick = HooklyUtils.getBestMessage(messages);
     const bestIndex = bestPick ? bestPick.index : -1;
 
@@ -381,15 +498,19 @@
             h("img", {
               className: "brand-logo",
               src: BRAND_LOGO_URL,
-              alt: "Hookly"
+              alt: "Hookly",
             }),
-            h("div", { className: "brand-text" }, "Hookly")
-          )
+            h("div", { className: "brand-text" }, "Hookly"),
+          ),
         ),
         h(
           "main",
           { className: "content" },
-          h("p", { className: "tagline" }, "Built to sound human, specific, and hard to ignore."),
+          h(
+            "p",
+            { className: "tagline" },
+            "Built to sound human, specific, and hard to ignore.",
+          ),
           profile &&
             h(
               "section",
@@ -398,26 +519,35 @@
                 "div",
                 { className: "profile-avatar" },
                 avatarUrl && !avatarFailed
-                    ? h("img", {
-                        className: "profile-avatar-image",
-                        src: avatarUrl,
-                        alt: profile.name || "LinkedIn profile",
-                        loading: "eager",
-                        referrerPolicy: "no-referrer",
-                        onError: () => setAvatarFailed(true)
-                      })
-                  : h("span", { className: "profile-avatar-fallback" }, initialsFromProfile(profile))
+                  ? h("img", {
+                      className: "profile-avatar-image",
+                      src: avatarUrl,
+                      alt: profile.name || "LinkedIn profile",
+                      loading: "eager",
+                      referrerPolicy: "no-referrer",
+                      onError: () => setAvatarFailed(true),
+                    })
+                  : h(
+                      "span",
+                      { className: "profile-avatar-fallback" },
+                      initialsFromProfile(profile),
+                    ),
               ),
               h(
                 "div",
                 { className: "profile-meta" },
-                h("p", { className: "profile-name" }, profile.name || "LinkedIn profile"),
+                h(
+                  "p",
+                  { className: "profile-name" },
+                  profile.name || "LinkedIn profile",
+                ),
                 h(
                   "p",
                   { className: "profile-headline" },
-                  profile.headline || "Headline not found yet. Hookly will still work if the name is visible."
-                )
-              )
+                  profile.headline ||
+                    "Headline not found yet. Hookly will still work if the name is visible.",
+                ),
+              ),
             ),
           h("p", { className: "section-label" }, "Select Tone"),
           h(
@@ -429,44 +559,59 @@
                 {
                   type: "button",
                   key: toneOption,
-                  className: `tone-pill ${tone === toneOption ? "active" : ""}`.trim(),
+                  className:
+                    `tone-pill ${tone === toneOption ? "active" : ""}`.trim(),
                   onClick: () => setTone(toneOption),
-                  disabled: isGenerating
+                  disabled: isGenerating,
                 },
-                toneOption
+                toneOption,
+              ),
+            ),
+          ),
+          tryCount < ALPHA_TRY_LIMIT
+            ? h(
+                "button",
+                {
+                  type: "button",
+                  className: "generate-button",
+                  onClick: handleGenerate,
+                  disabled: !canGenerate,
+                },
+                h("img", {
+                  className: "button-logo",
+                  src: BUTTON_LOGO_URL,
+                  alt: "",
+                  "aria-hidden": "true",
+                }),
+                isGenerating ? "Building..." : "Get replies",
               )
-            )
-          ),
-          h(
-            "button",
-            {
-              type: "button",
-              className: "generate-button",
-              onClick: handleGenerate,
-              disabled: !canGenerate
-            },
-            h("img", {
-              className: "button-logo",
-              src: BUTTON_LOGO_URL,
-              alt: "",
-              "aria-hidden": "true"
-            }),
-            isGenerating ? "Building..." : "Get replies"
-          ),
+            : renderAlphaLimitPanel(),
           renderStatusPanel(),
           h(
             "div",
             { className: "results-header" },
-            h("p", { className: "section-label", style: { margin: 0 } }, "Best openers"),
-            h("div", { className: "results-rule" })
+            h(
+              "p",
+              { className: "section-label", style: { margin: 0 } },
+              "Best openers",
+            ),
+            h("div", { className: "results-rule" }),
           ),
-          h("p", { className: "results-helper" }, "Built to sound human, specific, and hard to ignore."),
+          h(
+            "p",
+            { className: "results-helper" },
+            "Built to sound human, specific, and hard to ignore.",
+          ),
           isGenerating
             ? h(
                 React.Fragment,
                 null,
                 h(LoadingCards),
-                h("p", { className: "loading-note" }, "Scoring, ranking, and compressing the best option...")
+                h(
+                  "p",
+                  { className: "loading-note" },
+                  "Scoring, ranking, and compressing the best option...",
+                ),
               )
             : messages.length > 0
               ? h(
@@ -478,8 +623,8 @@
                     bestIndex,
                     sharpeningIndex,
                     handleCopy,
-                    handleMakeSharper
-                  )
+                    handleMakeSharper,
+                  ),
                 )
               : h(
                   "div",
@@ -488,11 +633,11 @@
                   h(
                     "p",
                     { className: "status-copy" },
-                    "Hookly will generate 3 short, reply-focused options once you open a LinkedIn profile and click the main button."
-                  )
-                )
-        )
-      )
+                    "Hookly will generate 3 short, reply-focused options once you open a LinkedIn profile and click the main button.",
+                  ),
+                ),
+        ),
+      ),
     );
   }
 

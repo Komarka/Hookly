@@ -404,6 +404,61 @@ Return only the short version.`;
     return null;
   }
 
+  function createProviderError(status, details) {
+    const normalized = String(details || "").toLowerCase();
+
+    if (
+      status === 401 ||
+      normalized.includes("invalid api key") ||
+      normalized.includes("incorrect api key") ||
+      normalized.includes("unauthorized")
+    ) {
+      return new Error(
+        "Your Groq API key is missing or invalid. Update GROQ_API_KEY, run npm run sync-env, and reload the extension.",
+      );
+    }
+
+    if (
+      normalized.includes("need more tokens") ||
+      normalized.includes("token limit") ||
+      normalized.includes("quota") ||
+      normalized.includes("billing") ||
+      normalized.includes("service tier")
+    ) {
+      return new Error(
+        "Your Groq account has reached its current token limit. Add capacity in Groq, then try again.",
+      );
+    }
+
+    if (
+      status === 429 ||
+      normalized.includes("rate limit") ||
+      normalized.includes("tokens per minute") ||
+      normalized.includes("tpm") ||
+      normalized.includes("please try again")
+    ) {
+      return new Error(
+        "Hookly hit the current Groq rate limit. Wait a few seconds and try again.",
+      );
+    }
+
+    if (status === 403) {
+      return new Error(
+        "Groq rejected this request for your current account or model access.",
+      );
+    }
+
+    if (status >= 500) {
+      return new Error(
+        "Groq is having a temporary issue right now. Try again in a moment.",
+      );
+    }
+
+    return new Error(
+      "Hookly could not get a valid response from Groq. Please try again.",
+    );
+  }
+
   async function fetchChatCompletion(systemPrompt, userPrompt, options) {
     if (!API_CONFIG.apiKey) {
       throw new Error(
@@ -443,9 +498,7 @@ Return only the short version.`;
         details = "";
       }
 
-      throw new Error(
-        `Groq API failed (${response.status}). ${details || "Check your API key, model, or endpoint."}`,
-      );
+      throw createProviderError(response.status, details);
     }
 
     const data = await response.json();
