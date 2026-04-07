@@ -38,25 +38,63 @@
       .join("");
   }
 
-  function renderMessages(messagesWithScores, copiedIndex, onCopy) {
+  function renderWhyItWorks(items) {
+    return h(
+      "ul",
+      { className: "why-list" },
+      items.map((item, index) => h("li", { key: `${item}-${index}` }, item))
+    );
+  }
+
+  function renderMessages(
+    messagesWithScores,
+    copiedIndex,
+    bestIndex,
+    sharpeningIndex,
+    onCopy,
+    onMakeSharper
+  ) {
     return messagesWithScores.map((message, index) =>
       h(
         "article",
-        { className: "card", key: `${message.text}-${index}` },
+        {
+          className: `card ${bestIndex === index ? "card-best" : ""}`.trim(),
+          key: `${message.text}-${index}`
+        },
+        h(
+          "div",
+          { className: "card-topline" },
+          h(
+            "p",
+            {
+              className: `variation-label ${VARIATION_CLASSES[index] || VARIATION_CLASSES[0]}`
+            },
+            `Hook variation ${String.fromCharCode(65 + index)}`
+          ),
+          bestIndex === index &&
+            h("span", { className: "best-badge" }, "\uD83D\uDD25 Best option")
+        ),
         h("p", { className: "card-message" }, message.text),
+        h(
+          "div",
+          { className: "why-block" },
+          h("p", { className: "why-title" }, "Why it works"),
+          renderWhyItWorks(message.whyItWorks || [])
+        ),
+        bestIndex === index &&
+          message.shortVersion &&
+          h(
+            "div",
+            { className: "short-version" },
+            h("p", { className: "short-version-label" }, "Short version"),
+            h("p", { className: "short-version-text" }, message.shortVersion)
+          ),
         h(
           "div",
           { className: "card-footer" },
           h(
             "div",
             { className: "card-meta" },
-            h(
-              "p",
-              {
-                className: `variation-label ${VARIATION_CLASSES[index] || VARIATION_CLASSES[0]}`
-              },
-              `Hook variation ${String.fromCharCode(65 + index)}`
-            ),
             h(
               "div",
               { className: "score-row" },
@@ -65,14 +103,29 @@
             )
           ),
           h(
-            "button",
-            {
-              type: "button",
-              className: `copy-button ${copiedIndex === index ? "copied" : ""}`.trim(),
-              onClick: () => onCopy(message.text, index),
-              title: "Copy message"
-            },
-            copiedIndex === index ? "\u2713 Copied" : "Copy"
+            "div",
+            { className: "card-actions" },
+            h(
+              "button",
+              {
+                type: "button",
+                className: "sharpen-button",
+                onClick: () => onMakeSharper(index),
+                disabled: sharpeningIndex === index,
+                title: "Rewrite this version to sound tighter"
+              },
+              sharpeningIndex === index ? "Sharpening..." : "Make sharper"
+            ),
+            h(
+              "button",
+              {
+                type: "button",
+                className: `copy-button ${copiedIndex === index ? "copied" : ""}`.trim(),
+                onClick: () => onCopy(message.text, index),
+                title: "Copy message"
+              },
+              copiedIndex === index ? "\u2713 Copied" : "Copy"
+            )
           )
         )
       )
@@ -106,6 +159,7 @@
     const [messages, setMessages] = React.useState([]);
     const [copiedIndex, setCopiedIndex] = React.useState(null);
     const [isGenerating, setIsGenerating] = React.useState(false);
+    const [sharpeningIndex, setSharpeningIndex] = React.useState(null);
     const [status, setStatus] = React.useState("checking");
     const [errorMessage, setErrorMessage] = React.useState("");
     const [avatarFailed, setAvatarFailed] = React.useState(false);
@@ -152,6 +206,7 @@
       }
 
       setIsGenerating(true);
+      setSharpeningIndex(null);
       setMessages([]);
       setCopiedIndex(null);
       setErrorMessage("");
@@ -159,19 +214,7 @@
 
       try {
         const generatedMessages = await HooklyUtils.generateMessages(profile, tone);
-        // Score all three generated options in parallel for a faster MVP flow.
-        const messagesWithScores = await Promise.all(
-          generatedMessages.map(async (text) => {
-            const score = await HooklyUtils.getHumanScore(text);
-
-            return {
-              text,
-              score,
-              label: HooklyUtils.getScoreLabel(score)
-            };
-          })
-        );
-
+        const messagesWithScores = await scoreAndDecorateMessages(generatedMessages);
         setMessages(messagesWithScores);
         setStatus("done");
       } catch (error) {
@@ -180,6 +223,43 @@
       } finally {
         setIsGenerating(false);
       }
+    }
+
+    async function scoreAndDecorateMessages(messageTexts) {
+      const scoredMessages = await Promise.all(
+        messageTexts.map(async (text) => {
+          const score = await HooklyUtils.getHumanScore(text);
+
+          return {
+            text,
+            score,
+            label: HooklyUtils.getScoreLabel(score),
+            whyItWorks: HooklyUtils.getWhyItWorks(text, profile),
+            shortVersion: null
+          };
+        })
+      );
+
+      const bestPick = HooklyUtils.getBestMessage(scoredMessages);
+
+      if (bestPick) {
+        try {
+          scoredMessages[bestPick.index] = {
+            ...scoredMessages[bestPick.index],
+            shortVersion: await HooklyUtils.generateShortVersion(
+              scoredMessages[bestPick.index].text,
+              tone
+            )
+          };
+        } catch (error) {
+          scoredMessages[bestPick.index] = {
+            ...scoredMessages[bestPick.index],
+            shortVersion: null
+          };
+        }
+      }
+
+      return scoredMessages;
     }
 
     async function handleCopy(text, index) {
@@ -191,6 +271,31 @@
         }, 1400);
       } catch (error) {
         setErrorMessage("Clipboard access failed. Copy manually from the card.");
+      }
+    }
+
+    async function handleMakeSharper(index) {
+      if (sharpeningIndex !== null || !messages[index]) {
+        return;
+      }
+
+      setSharpeningIndex(index);
+      setErrorMessage("");
+
+      try {
+        const sharperMessage = await HooklyUtils.makeMessageSharper(messages[index].text, tone);
+        const updatedTexts = messages.map((item, currentIndex) =>
+          currentIndex === index ? sharperMessage : item.text
+        );
+        const updatedMessages = await scoreAndDecorateMessages(updatedTexts);
+
+        setMessages(updatedMessages);
+      } catch (error) {
+        setErrorMessage(
+          error && error.message ? error.message : "Could not sharpen this message right now."
+        );
+      } finally {
+        setSharpeningIndex(null);
       }
     }
 
@@ -234,11 +339,11 @@
         return h(
           "div",
           { className: "status-panel" },
-          h("p", { className: "status-title" }, "Generating outreach"),
+          h("p", { className: "status-title" }, "Building your best opener"),
           h(
             "p",
             { className: "status-copy" },
-            "Hookly is creating 3 personalized messages and scoring them for natural tone."
+            "Hookly is generating 3 options, scoring them, and picking the strongest one."
           )
         );
       }
@@ -251,13 +356,15 @@
           "p",
           { className: "status-copy" },
           profile
-            ? "Pick a tone and generate 3 cold message options built from the visible profile details."
-            : "Open a LinkedIn profile to generate outreach options."
+            ? "Pick a tone and get 3 reply-focused openers built from the visible profile details."
+            : "Open a LinkedIn profile to get reply-focused outreach options."
         )
       );
     }
 
     const canGenerate = HooklyUtils.hasProfileIdentity(profile) && !isGenerating;
+    const bestPick = HooklyUtils.getBestMessage(messages);
+    const bestIndex = bestPick ? bestPick.index : -1;
 
     return h(
       "div",
@@ -282,7 +389,7 @@
         h(
           "main",
           { className: "content" },
-          h("p", { className: "tagline" }, "Messages that get replies"),
+          h("p", { className: "tagline" }, "Built to sound human, specific, and hard to ignore."),
           profile &&
             h(
               "section",
@@ -344,24 +451,36 @@
               alt: "",
               "aria-hidden": "true"
             }),
-            isGenerating ? "Generating..." : "Generate message"
+            isGenerating ? "Building..." : "Get replies"
           ),
           renderStatusPanel(),
           h(
             "div",
             { className: "results-header" },
-            h("p", { className: "section-label", style: { margin: 0 } }, "Variations"),
+            h("p", { className: "section-label", style: { margin: 0 } }, "Best openers"),
             h("div", { className: "results-rule" })
           ),
+          h("p", { className: "results-helper" }, "Built to sound human, specific, and hard to ignore."),
           isGenerating
             ? h(
                 React.Fragment,
                 null,
                 h(LoadingCards),
-                h("p", { className: "loading-note" }, "Scoring each message for natural tone...")
+                h("p", { className: "loading-note" }, "Scoring, ranking, and compressing the best option...")
               )
             : messages.length > 0
-              ? h("div", { className: "cards" }, renderMessages(messages, copiedIndex, handleCopy))
+              ? h(
+                  "div",
+                  { className: "cards" },
+                  renderMessages(
+                    messages,
+                    copiedIndex,
+                    bestIndex,
+                    sharpeningIndex,
+                    handleCopy,
+                    handleMakeSharper
+                  )
+                )
               : h(
                   "div",
                   { className: "status-panel" },
@@ -369,7 +488,7 @@
                   h(
                     "p",
                     { className: "status-copy" },
-                    "Hookly will generate 3 short personalized outreach options once you open a LinkedIn profile and click the main button."
+                    "Hookly will generate 3 short, reply-focused options once you open a LinkedIn profile and click the main button."
                   )
                 )
         )

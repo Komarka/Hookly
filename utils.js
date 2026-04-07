@@ -33,6 +33,13 @@
       .trim();
   }
 
+  function cleanInlineText(value) {
+    return cleanMessageText(value)
+      .replace(/\s+/g, " ")
+      .replace(/\n+/g, " ")
+      .trim();
+  }
+
   function clampScore(score) {
     if (!Number.isFinite(score)) {
       return 70;
@@ -304,6 +311,47 @@ Message:
 Return only a number.`;
   }
 
+  function createSharpenPrompt(message, tone) {
+    return `You are improving a LinkedIn outreach opener.
+
+Rewrite this message to make it sharper.
+
+Rules:
+- shorter
+- more confident
+- remove filler
+- remove soft wording
+- keep it human
+- keep the same core idea
+- do not sound spammy
+- do not add a question unless absolutely necessary
+
+Tone: ${tone}
+
+Message:
+"${message}"
+
+Return only the rewritten message.`;
+  }
+
+  function createShortVersionPrompt(message, tone) {
+    return `Create an ultra-short LinkedIn opener version of this message.
+
+Rules:
+- one sentence only
+- maximum 16 words
+- keep the hook
+- sound human
+- concise and confident
+
+Tone: ${tone}
+
+Message:
+"${message}"
+
+Return only the short version.`;
+  }
+
   function extractTextFromProviderResponse(data) {
     const choice =
       data && Array.isArray(data.choices) && data.choices.length > 0
@@ -526,16 +574,116 @@ Return only a number.`;
     }
   }
 
+  function getBestMessage(messagesWithScores) {
+    if (!Array.isArray(messagesWithScores) || messagesWithScores.length === 0) {
+      return null;
+    }
+
+    let bestIndex = 0;
+
+    for (let index = 1; index < messagesWithScores.length; index += 1) {
+      if ((messagesWithScores[index].score || 0) > (messagesWithScores[bestIndex].score || 0)) {
+        bestIndex = index;
+      }
+    }
+
+    return {
+      index: bestIndex,
+      message: messagesWithScores[bestIndex]
+    };
+  }
+
+  function collectProfileSignals(profile) {
+    const values = [
+      profile && profile.headline,
+      profile && profile.company,
+      profile && profile.school,
+      profile && profile.location,
+      profile && profile.about,
+      profile && profile.latestWorkplace && profile.latestWorkplace.role,
+      profile && profile.latestWorkplace && profile.latestWorkplace.company
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .match(/[a-zа-яё0-9.+#/-]{4,}/gi);
+
+    return Array.from(new Set(values || [])).slice(0, 40);
+  }
+
+  function getWhyItWorks(message, profile) {
+    const text = cleanInlineText(message);
+    const normalized = text.toLowerCase();
+    const bullets = [];
+    const profileSignals = collectProfileSignals(profile);
+
+    if (/\b(most|few|rare|rarely|unlike)\b/i.test(text)) {
+      bullets.push("uses contrast");
+    }
+
+    if (profileSignals.some((signal) => normalized.includes(signal.toLowerCase()))) {
+      bullets.push("specific to profile");
+    }
+
+    if (/\d/.test(text)) {
+      bullets.push("grounds itself in a concrete fact");
+    }
+
+    if (text.split(/\s+/).filter(Boolean).length <= 12) {
+      bullets.push("easy to read fast");
+    }
+
+    if (bullets.length < 3 && !/\b(would|could|maybe|perhaps|interesting|impressive)\b/i.test(text)) {
+      bullets.push("sounds natural");
+    }
+
+    if (bullets.length < 3) {
+      bullets.push("lands with a clear point");
+    }
+
+    return bullets.slice(0, 3);
+  }
+
+  async function makeMessageSharper(message, tone) {
+    const rewritten = await fetchChatCompletion(
+      "You rewrite outreach into tighter, more confident lines. Return only the rewritten message.",
+      createSharpenPrompt(message, tone),
+      {
+        temperature: 0.7,
+        maxTokens: 80,
+      },
+    );
+
+    return cleanInlineText(rewritten);
+  }
+
+  async function generateShortVersion(message, tone) {
+    const shortVersion = await fetchChatCompletion(
+      "You compress outreach to one sharp sentence. Return only the short version.",
+      createShortVersionPrompt(message, tone),
+      {
+        temperature: 0.6,
+        maxTokens: 50,
+      },
+    );
+
+    return cleanInlineText(shortVersion);
+  }
+
   window.HooklyUtils = {
     API_CONFIG,
     clampScore,
     copyToClipboard,
     generateMessages,
+    generateShortVersion,
     getActiveTab,
+    getBestMessage,
     getHumanScore,
     getScoreLabel,
+    getWhyItWorks,
     hasProfileIdentity,
     isLinkedInProfileUrl,
+    makeMessageSharper,
     requestProfileData,
   };
 })();
